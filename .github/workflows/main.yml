@@ -12,7 +12,7 @@ jobs:
     steps:
       # 1️⃣ Checkout your repository
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # 2️⃣ Cache dependencies for faster builds
       - name: Cache Flutter dependencies
@@ -45,7 +45,7 @@ jobs:
 
       # 7️⃣ Upload build artifacts to GitHub Actions (optional)
       - name: Upload APK as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
