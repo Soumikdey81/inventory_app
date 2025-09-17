@@ -29,7 +29,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.19.6" # 🔧 Change to match your local `flutter --version`
+          flutter-version: "3.32.8" # ✅ Your Flutter version
 
       # 4️⃣ Install dependencies
       - name: Install dependencies
@@ -43,21 +43,22 @@ jobs:
       - name: Build Release App Bundle
         run: flutter build appbundle --release
 
-      # 7️⃣ Upload build artifacts to GitHub Actions (optional)
+      # 7️⃣ Upload build artifacts to GitHub Actions
       - name: Upload APK as Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4 # ✅ Updated to v4
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload AAB as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # ✅ Updated to v4
         with:
           name: app-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
 
-      # 8️⃣ Create a GitHub Release
+      # 8️⃣ Create a GitHub Release (only if build succeeds)
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           name: "New Release - ${{ github.run_number }}"
@@ -65,15 +66,10 @@ jobs:
           body: |
             🚀 **New Release**
             - Automatically built by GitHub Actions
-            - Flutter Version: 3.19.6
+            - Flutter Version: 3.32.8
             - Commit: ${{ github.sha }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 9️⃣ Upload APK to the GitHub Release
-      - name: Upload APK to GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
