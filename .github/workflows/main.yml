@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main # Runs workflow on every push to main branch
+      
+permissions:
+  contents: write # ✅ Required to create releases
 
 jobs:
   build:
