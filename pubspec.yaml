@@ -1,0 +1,29 @@
+name: inventory_app
+description: "A new Flutter project."
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^4.1.0
+  firebase_auth: ^6.0.2
+  cloud_firestore: ^6.0.1
+  file_picker: ^10.3.3 # updated
+  excel: ^4.0.6
+  path_provider: ^2.1.5 # updated
+  open_file: ^3.5.10 # updated
+  intl: ^0.20.2 # updated
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
