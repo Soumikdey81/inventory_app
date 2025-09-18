@@ -17,11 +17,16 @@ class ImportScreen extends StatefulWidget {
 class _ImportScreenState extends State<ImportScreen> {
   String _status = 'Ready to import';
 
-  
   Future<void> _importExcel() async {
     setState(() => _status = 'Picking file...');
     try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx','xls']);
+      // ✅ Force plugin to also return file bytes (important for real devices)
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true, // <--- This ensures `bytes` is not null
+      );
+
       if (result == null || result.files.isEmpty) {
         setState(() => _status = 'No file selected');
         return;
@@ -30,9 +35,17 @@ class _ImportScreenState extends State<ImportScreen> {
 
       Uint8List? bytes = result.files.first.bytes;
       final String? pickedPath = result.files.first.path;
+
+      // Fallback: If bytes are null, try reading manually from path
       if (bytes == null && pickedPath != null) {
-        bytes = await File(pickedPath).readAsBytes();
+        try {
+          bytes = await File(pickedPath).readAsBytes();
+        } catch (e) {
+          setState(() => _status = 'Unable to read file: $e');
+          return;
+        }
       }
+
       if (bytes == null) {
         setState(() => _status = 'Failed to read file bytes');
         return;
@@ -53,42 +66,50 @@ class _ImportScreenState extends State<ImportScreen> {
       }
 
       // Build header
-      final header = table.rows.first.map((c) => c?.value?.toString() ?? '').toList();
+      final header = table.rows.first
+          .map((c) => c?.value?.toString() ?? '')
+          .toList();
 
       // Fetch table schema from Firestore
       setState(() => _status = 'Fetching schema...');
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      final tableDoc = FirebaseFirestore.instance.collection('users').doc(uid).collection('tables').doc(widget.tableId);
+      final tableDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('tables')
+          .doc(widget.tableId);
       final tableSnap = await tableDoc.get();
       if (!tableSnap.exists) {
         setState(() => _status = 'Table not found');
         return;
       }
-      final schema = Map<String, dynamic>.from(tableSnap.data()!['schema'] ?? {});
+      final schema = Map<String, dynamic>.from(
+        tableSnap.data()!['schema'] ?? {},
+      );
 
-      // Normalize header and schema keys (case-insensitive, trim)
+      // Normalize header and schema keys (case-insensitive)
       String _norm(String s) => s.trim().toLowerCase();
-      final normSchema = { for (var k in schema.keys) _norm(k): k }; // normalized -> real
+      final normSchema = {for (var k in schema.keys) _norm(k): k};
       final normHeader = header.map((h) => _norm(h)).toList();
 
-      // Detect missing schema keys (but do not abort)
+      // Detect missing schema keys (warn but continue)
       final missing = <String>[];
       for (final realKey in schema.keys) {
         if (!normHeader.contains(_norm(realKey))) missing.add(realKey);
       }
       if (missing.isNotEmpty) {
-        setState(() => _status = 'Warning: Missing columns: ${missing.join(", ")}. Missing fields will be saved as null.');
+        setState(
+          () => _status =
+              'Warning: Missing columns: ${missing.join(", ")}. Missing fields will be saved as null.',
+        );
       } else {
         setState(() => _status = 'Importing rows...');
       }
 
-      // Prepare to import rows in chunks (safe against Firestore batch limits)
       const int chunkSize = 200;
       var batch = FirebaseFirestore.instance.batch();
       int counter = 0;
       int imported = 0;
-
-      // For progress feedback - total rows to process (excluding header)
       final totalRows = table.rows.length - 1;
 
       for (int r = 1; r < table.rows.length; r++) {
@@ -99,67 +120,65 @@ class _ImportScreenState extends State<ImportScreen> {
           final rawKey = header[c];
           final normalized = _norm(rawKey);
           final realKey = normSchema[normalized];
-          if (realKey == null) {
-            // Unknown/extra column - skip it (do not write extra fields)
-            continue;
-          }
+          if (realKey == null) continue; // ignore extra columns
           final cell = row.length > c ? row[c] : null;
           dynamic val = cell?.value;
 
-          // Basic type conversions based on schema definition
+          // Type handling
           final schemaDef = schema[realKey];
           if (schemaDef is Map && schemaDef['type'] == 'number') {
-            if (val == null || val.toString().isEmpty) {
-              val = null;
-            } else {
-              val = num.tryParse(val.toString());
-            }
+            val = (val == null || val.toString().isEmpty)
+                ? null
+                : num.tryParse(val.toString());
           } else if (schemaDef is Map && schemaDef['type'] == 'date') {
-            if (val is DateTime) {
-              val = val;
-            } else {
-              final parsed = DateTime.tryParse(val?.toString() ?? '');
-              val = parsed;
-            }
+            val = (val is DateTime)
+                ? val
+                : DateTime.tryParse(val?.toString() ?? '');
           } else {
-            val = (val == null || val.toString().trim().isEmpty) ? null : val.toString();
+            val = (val == null || val.toString().trim().isEmpty)
+                ? null
+                : val.toString();
           }
           data[realKey] = val;
         }
 
-        // Ensure missing schema keys exist in the data as nulls
+        // Fill missing schema keys with null
         for (final k in schema.keys) {
           data.putIfAbsent(k, () => null);
         }
 
-        final docRef = FirebaseFirestore.instance.collection('users').doc(uid).collection('tables').doc(widget.tableId).collection('rows').doc();
-        batch.set(docRef, {...data, 'createdAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()});
+        final docRef = tableDoc.collection('rows').doc();
+        batch.set(docRef, {
+          ...data,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
         counter++;
         imported++;
 
-        // Update progress UI every 20 rows or at end
         if (imported % 20 == 0 || imported == totalRows) {
-          if (mounted) setState(() => _status = 'Importing rows... $imported / $totalRows');
+          if (mounted) {
+            setState(
+              () => _status = 'Importing rows... $imported / $totalRows',
+            );
+          }
         }
 
         if (counter % chunkSize == 0) {
-          // commit and create a new batch
           await batch.commit();
           batch = FirebaseFirestore.instance.batch();
         }
       }
 
-      // Commit any remaining writes
       if (counter % chunkSize != 0) {
         await batch.commit();
       }
 
       if (mounted) setState(() => _status = 'Imported $imported rows');
-    } catch (e, st) {
+    } catch (e) {
       if (mounted) setState(() => _status = 'Import failed: $e');
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
