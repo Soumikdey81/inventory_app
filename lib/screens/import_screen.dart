@@ -20,11 +20,10 @@ class _ImportScreenState extends State<ImportScreen> {
   Future<void> _importExcel() async {
     setState(() => _status = 'Picking file...');
     try {
-      // ✅ Force plugin to also return file bytes (important for real devices)
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls'],
-        withData: true, // <--- This ensures `bytes` is not null
+        withData: true, // ✅ ensures bytes are available on device
       );
 
       if (result == null || result.files.isEmpty) {
@@ -36,7 +35,7 @@ class _ImportScreenState extends State<ImportScreen> {
       Uint8List? bytes = result.files.first.bytes;
       final String? pickedPath = result.files.first.path;
 
-      // Fallback: If bytes are null, try reading manually from path
+      // ✅ fallback to path if bytes are null
       if (bytes == null && pickedPath != null) {
         try {
           bytes = await File(pickedPath).readAsBytes();
@@ -57,7 +56,6 @@ class _ImportScreenState extends State<ImportScreen> {
         return;
       }
 
-      // Use first sheet
       final sheetName = excel.tables.keys.first;
       final table = excel.tables[sheetName]!;
       if (table.rows.isEmpty) {
@@ -65,12 +63,10 @@ class _ImportScreenState extends State<ImportScreen> {
         return;
       }
 
-      // Build header
       final header = table.rows.first
           .map((c) => c?.value?.toString() ?? '')
           .toList();
 
-      // Fetch table schema from Firestore
       setState(() => _status = 'Fetching schema...');
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final tableDoc = FirebaseFirestore.instance
@@ -87,12 +83,10 @@ class _ImportScreenState extends State<ImportScreen> {
         tableSnap.data()!['schema'] ?? {},
       );
 
-      // Normalize header and schema keys (case-insensitive)
       String _norm(String s) => s.trim().toLowerCase();
       final normSchema = {for (var k in schema.keys) _norm(k): k};
       final normHeader = header.map((h) => _norm(h)).toList();
 
-      // Detect missing schema keys (warn but continue)
       final missing = <String>[];
       for (final realKey in schema.keys) {
         if (!normHeader.contains(_norm(realKey))) missing.add(realKey);
@@ -120,11 +114,10 @@ class _ImportScreenState extends State<ImportScreen> {
           final rawKey = header[c];
           final normalized = _norm(rawKey);
           final realKey = normSchema[normalized];
-          if (realKey == null) continue; // ignore extra columns
+          if (realKey == null) continue;
           final cell = row.length > c ? row[c] : null;
           dynamic val = cell?.value;
 
-          // Type handling
           final schemaDef = schema[realKey];
           if (schemaDef is Map && schemaDef['type'] == 'number') {
             val = (val == null || val.toString().isEmpty)
@@ -142,7 +135,6 @@ class _ImportScreenState extends State<ImportScreen> {
           data[realKey] = val;
         }
 
-        // Fill missing schema keys with null
         for (final k in schema.keys) {
           data.putIfAbsent(k, () => null);
         }
@@ -192,4 +184,3 @@ class _ImportScreenState extends State<ImportScreen> {
     );
   }
 }
-//
